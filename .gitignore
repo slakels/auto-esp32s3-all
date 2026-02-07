@@ -1,0 +1,80 @@
+# .gitignore para proyecto ESP32 (ESP-IDF / CMake)
+# Generado: reglas comunes para builds, artefactos y entornos locales
+
+# --- Build artifacts ---
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/compile_commands.json
+/project_description.json
+*.elf
+*.bin
+*.map
+*.img
+*.hex
+*.log
+
+# ESP-IDF / project-specific
+/bootloader/
+/bootloader-prefix/
+/partition_table/
+/partition_table_build/
+/project_elf_src_*.c
+flasher_args.json
+flasher_args.json.in
+app-flash_args*
+bootloader-flash_args*
+flash_*args*
+otadata-flash_args
+
+# SDK configuration files (may be regenerated or contain local secrets)
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults
+config.env
+
+# OTA and other generated artifacts
+ota_data_initial.bin
+spiffs_image.bin
+
+# --- IDEs / Editors ---
+.vscode/
+.idea/
+*.iml
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+.venv/
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- Temporary / swap ---
+*.swp
+*.swo
+*~
+*.tmp
+
+# --- Keys, certs, logs ---
+*.pem
+*.key
+*.crt
+*.log
+
+# Local environment files
+.env
+.env.local
+
+# Ignore user-specific files created by editors/IDEs
+*.user
+*.sublime-workspace
+
+# End of .gitignore
