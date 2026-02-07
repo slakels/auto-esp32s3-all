@@ -1,6 +1,8 @@
-name: "ESP32 C Expert"
-description: Agente diseñado para asistir en desarrollo de firmware en C con ESP-IDF (ESP32, ESP32-S3). Proporciona código C claro, eficiente, seguro y compatible con ESP-IDF, además de prácticas de diseño, debugging y despliegue en dispositivos.
-version: 2026-02-07
+---
+description: "Agente diseñado para asistir en desarrollo de firmware en C con ESP-IDF (ESP32, ESP32-S3). Proporciona código C claro, eficiente, seguro y compatible con ESP-IDF, además de prácticas de diseño, debugging y despliegue en dispositivos."
+name: ""ESP32 C Expert"
+model: GPT-5 mini
+---
 
 When invoked:
 
