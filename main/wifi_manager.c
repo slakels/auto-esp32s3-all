@@ -3,6 +3,7 @@
 #include "wifi_manager.h"
 #include "config.h"
 #include "core.h"
+#include "app_config.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -14,29 +15,33 @@
 static const char *TAG = "WIFI";
 
 static esp_netif_t *s_sta_netif = NULL;
-static int s_current_wifi_index = 0;
 static int s_retry_count = 0;
 
-// === MISMA FUNCIÓN QUE TENÍAS EN EL MAIN ORIGINAL ===
+// === APPLY WIFI CONFIG FROM app_config ===
 static esp_err_t wifi_apply_current_config(void)
 {
-    if (s_current_wifi_index < 0 || s_current_wifi_index >= WIFI_NETS_COUNT) {
-        ESP_LOGE(TAG, "wifi_apply_current_config: índice fuera de rango");
+    wifi_config_t wifi_config = (wifi_config_t){ 0 };
+
+    // Thread-safe read of WiFi configuration
+    if (app_config_lock() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to acquire config lock");
         return ESP_FAIL;
     }
 
-    wifi_config_t wifi_config = (wifi_config_t){ 0 };
-    const wifi_net_t *net = &WIFI_NETS[s_current_wifi_index];
-
-    snprintf((char *)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", net->ssid);
-    snprintf((char *)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", net->pass);
+    snprintf((char *)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), 
+             "%s", g_app_config.wifi_ssid);
+    snprintf((char *)wifi_config.sta.password, sizeof(wifi_config.sta.password), 
+             "%s", g_app_config.wifi_pass);
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
-    ESP_LOGI(TAG, "Usando SSID=%s (idx=%d)", net->ssid, s_current_wifi_index);
+    ESP_LOGI(TAG, "Using WiFi SSID=%s", g_app_config.wifi_ssid);
+    
+    app_config_unlock();
+    
     return esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 }
 
-// === MISMO HANDLER QUE TENÍAS EN EL MAIN ORIGINAL ===
+// === SAME HANDLER AS BEFORE ===
 static void wifi_event_handler(void *arg,
                                esp_event_base_t event_base,
                                int32_t event_id,
@@ -52,7 +57,7 @@ static void wifi_event_handler(void *arg,
 
             case WIFI_EVENT_STA_DISCONNECTED: {
                 s_wifi_connected = false;
-                s_mqtt_connected = false;          // si no hay wifi, tampoco mqtt
+                s_mqtt_connected = false;          // if no wifi, no mqtt
                 s_led_mode = LED_MODE_WIFI_CONNECTING;
 
                 wifi_event_sta_disconnected_t *disc =
@@ -63,12 +68,7 @@ static void wifi_event_handler(void *arg,
 
                 if (s_retry_count >= MAX_RETRY_PER_AP) {
                     s_retry_count = 0;
-                    s_current_wifi_index = (s_current_wifi_index + 1) % WIFI_NETS_COUNT;
-                    ESP_LOGW(TAG, "Cambiando a siguiente SSID (idx=%d)", s_current_wifi_index);
-                    if (wifi_apply_current_config() != ESP_OK) {
-                        ESP_LOGE(TAG, "Error aplicando config WiFi para idx=%d", s_current_wifi_index);
-                        s_led_mode = LED_MODE_ERROR;
-                    }
+                    ESP_LOGW(TAG, "Max retries reached, will keep retrying...");
                 }
 
                 esp_wifi_connect();
@@ -98,23 +98,35 @@ static void wifi_event_handler(void *arg,
     }
 }
 
-// === INIT Y ARRANQUE DEL WIFI ===
+// === INIT AND START WIFI ===
 esp_err_t wifi_init_and_start(void)
 {
-    // Init stack de red y loop de eventos
+    // Check if WiFi is enabled in configuration (thread-safe)
+    bool wifi_enabled = true;
+    if (app_config_lock() == ESP_OK) {
+        wifi_enabled = g_app_config.enable_wifi;
+        app_config_unlock();
+    }
+    
+    if (!wifi_enabled) {
+        ESP_LOGW(TAG, "WiFi disabled in configuration, skipping init");
+        return ESP_OK;
+    }
+    
+    // Init network stack and event loop
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // Crear interfaz STA por defecto
+    // Create default STA interface
     s_sta_netif = esp_netif_create_default_wifi_sta();
     configASSERT(s_sta_netif != NULL);
 
-    // Init driver WiFi
+    // Init WiFi driver
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
-    // Registrar handlers de WIFI_EVENT e IP_EVENT
+    // Register WIFI_EVENT and IP_EVENT handlers
     ESP_ERROR_CHECK(
         esp_event_handler_instance_register(
             WIFI_EVENT,
@@ -131,12 +143,11 @@ esp_err_t wifi_init_and_start(void)
             NULL,
             NULL));
 
-    // Configuramos el primer SSID y arrancamos WiFi
-    s_current_wifi_index = 0;
+    // Configure WiFi from app_config and start
     s_retry_count = 0;
     s_wifi_connected = false;
     ESP_ERROR_CHECK(wifi_apply_current_config());
-    ESP_ERROR_CHECK(esp_wifi_start());   // WIFI_EVENT_STA_START hará esp_wifi_connect()
+    ESP_ERROR_CHECK(esp_wifi_start());   // WIFI_EVENT_STA_START will call esp_wifi_connect()
 
     return ESP_OK;
 }
