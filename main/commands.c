@@ -146,9 +146,52 @@ static void handle_command(const command_t *cmd)
         if (!root) return;
 
         cJSON_AddStringToObject(root, "action", "retornoConfig");
-        cJSON_AddBoolToObject  (root, "enableCards", g_app_config.enable_cards);
         cJSON_AddStringToObject(root, "id", device_id);
         cJSON_AddStringToObject(root, "idPeticion", cmd->id_peticion);
+        cJSON_AddNumberToObject(root, "version", g_app_config.version);
+        
+        // Device info
+        cJSON_AddStringToObject(root, "deviceId", g_app_config.device_id);
+        cJSON_AddStringToObject(root, "deviceName", g_app_config.device_name);
+        
+        // Feature enables
+        cJSON_AddBoolToObject(root, "enableCards", g_app_config.enable_cards);
+        cJSON_AddBoolToObject(root, "enableQr", g_app_config.enable_qr);
+        cJSON_AddBoolToObject(root, "enableWifi", g_app_config.enable_wifi);
+        cJSON_AddBoolToObject(root, "enableMqtt", g_app_config.enable_mqtt);
+        
+        // WiFi config (don't send password for security)
+        cJSON_AddStringToObject(root, "wifiSsid", g_app_config.wifi_ssid);
+        
+        // MQTT config (don't send password for security)
+        cJSON_AddStringToObject(root, "mqttHost", g_app_config.mqtt_host);
+        cJSON_AddNumberToObject(root, "mqttPort", g_app_config.mqtt_port);
+        cJSON_AddStringToObject(root, "mqttUser", g_app_config.mqtt_user);
+        cJSON_AddStringToObject(root, "mqttTopicRoot", g_app_config.mqtt_topic_root);
+        
+        // GPIO pins - RC522
+        cJSON *gpioRc522 = cJSON_CreateObject();
+        cJSON_AddNumberToObject(gpioRc522, "mosi", g_app_config.rc522_pin_mosi);
+        cJSON_AddNumberToObject(gpioRc522, "miso", g_app_config.rc522_pin_miso);
+        cJSON_AddNumberToObject(gpioRc522, "sck", g_app_config.rc522_pin_sck);
+        cJSON_AddNumberToObject(gpioRc522, "ss1", g_app_config.rc522_pin_ss1);
+        cJSON_AddNumberToObject(gpioRc522, "rst1", g_app_config.rc522_pin_rst1);
+        cJSON_AddNumberToObject(gpioRc522, "ss2", g_app_config.rc522_pin_ss2);
+        cJSON_AddNumberToObject(gpioRc522, "rst2", g_app_config.rc522_pin_rst2);
+        cJSON_AddItemToObject(root, "gpioRc522", gpioRc522);
+        
+        // GPIO pins - other
+        cJSON_AddNumberToObject(root, "tornInPin", g_app_config.torn_in_pin);
+        cJSON_AddNumberToObject(root, "tornOutPin", g_app_config.torn_out_pin);
+        cJSON_AddNumberToObject(root, "buzzerPin", g_app_config.buzzer_pin);
+        
+        // GPIO pins - QR
+        cJSON *gpioQr = cJSON_CreateObject();
+        cJSON_AddNumberToObject(gpioQr, "tx", g_app_config.qr_uart_tx);
+        cJSON_AddNumberToObject(gpioQr, "rx", g_app_config.qr_uart_rx);
+        cJSON_AddNumberToObject(gpioQr, "uartNum", g_app_config.qr_uart_num);
+        cJSON_AddNumberToObject(gpioQr, "baudRate", g_app_config.qr_baud_rate);
+        cJSON_AddItemToObject(root, "gpioQr", gpioQr);
 
         char *json = cJSON_PrintUnformatted(root);
         if (json) {
@@ -171,23 +214,189 @@ static void handle_command(const command_t *cmd)
         const char *id_pet = (cJSON_IsString(idPetItem) ? idPetItem->valuestring : "-");
 
         if (cJSON_IsObject(cfg)) {
-            cJSON *enableCardsItem = cJSON_GetObjectItem(cfg, "enableCards");
-            if (cJSON_IsBool(enableCardsItem)) {
-                g_app_config.enable_cards = cJSON_IsTrue(enableCardsItem);
+            // Device info
+            cJSON *item;
+            
+            item = cJSON_GetObjectItem(cfg, "deviceId");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.device_id, item->valuestring, sizeof(g_app_config.device_id) - 1);
             }
-            // aquí podrías leer más campos de config...
+            
+            item = cJSON_GetObjectItem(cfg, "deviceName");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.device_name, item->valuestring, sizeof(g_app_config.device_name) - 1);
+            }
+            
+            // Feature enables
+            item = cJSON_GetObjectItem(cfg, "enableCards");
+            if (cJSON_IsBool(item)) {
+                g_app_config.enable_cards = cJSON_IsTrue(item);
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "enableQr");
+            if (cJSON_IsBool(item)) {
+                g_app_config.enable_qr = cJSON_IsTrue(item);
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "enableWifi");
+            if (cJSON_IsBool(item)) {
+                g_app_config.enable_wifi = cJSON_IsTrue(item);
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "enableMqtt");
+            if (cJSON_IsBool(item)) {
+                g_app_config.enable_mqtt = cJSON_IsTrue(item);
+            }
+            
+            // WiFi config
+            item = cJSON_GetObjectItem(cfg, "wifiSsid");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.wifi_ssid, item->valuestring, sizeof(g_app_config.wifi_ssid) - 1);
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "wifiPass");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.wifi_pass, item->valuestring, sizeof(g_app_config.wifi_pass) - 1);
+            }
+            
+            // MQTT config
+            item = cJSON_GetObjectItem(cfg, "mqttHost");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.mqtt_host, item->valuestring, sizeof(g_app_config.mqtt_host) - 1);
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "mqttPort");
+            if (cJSON_IsNumber(item)) {
+                g_app_config.mqtt_port = item->valueint;
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "mqttUser");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.mqtt_user, item->valuestring, sizeof(g_app_config.mqtt_user) - 1);
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "mqttPass");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.mqtt_pass, item->valuestring, sizeof(g_app_config.mqtt_pass) - 1);
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "mqttTopicRoot");
+            if (cJSON_IsString(item)) {
+                strncpy(g_app_config.mqtt_topic_root, item->valuestring, sizeof(g_app_config.mqtt_topic_root) - 1);
+            }
+            
+            // GPIO pins - RC522
+            cJSON *gpioRc522 = cJSON_GetObjectItem(cfg, "gpioRc522");
+            if (cJSON_IsObject(gpioRc522)) {
+                item = cJSON_GetObjectItem(gpioRc522, "mosi");
+                if (cJSON_IsNumber(item)) g_app_config.rc522_pin_mosi = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioRc522, "miso");
+                if (cJSON_IsNumber(item)) g_app_config.rc522_pin_miso = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioRc522, "sck");
+                if (cJSON_IsNumber(item)) g_app_config.rc522_pin_sck = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioRc522, "ss1");
+                if (cJSON_IsNumber(item)) g_app_config.rc522_pin_ss1 = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioRc522, "rst1");
+                if (cJSON_IsNumber(item)) g_app_config.rc522_pin_rst1 = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioRc522, "ss2");
+                if (cJSON_IsNumber(item)) g_app_config.rc522_pin_ss2 = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioRc522, "rst2");
+                if (cJSON_IsNumber(item)) g_app_config.rc522_pin_rst2 = item->valueint;
+            }
+            
+            // GPIO pins - other
+            item = cJSON_GetObjectItem(cfg, "tornInPin");
+            if (cJSON_IsNumber(item)) {
+                g_app_config.torn_in_pin = item->valueint;
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "tornOutPin");
+            if (cJSON_IsNumber(item)) {
+                g_app_config.torn_out_pin = item->valueint;
+            }
+            
+            item = cJSON_GetObjectItem(cfg, "buzzerPin");
+            if (cJSON_IsNumber(item)) {
+                g_app_config.buzzer_pin = item->valueint;
+            }
+            
+            // GPIO pins - QR
+            cJSON *gpioQr = cJSON_GetObjectItem(cfg, "gpioQr");
+            if (cJSON_IsObject(gpioQr)) {
+                item = cJSON_GetObjectItem(gpioQr, "tx");
+                if (cJSON_IsNumber(item)) g_app_config.qr_uart_tx = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioQr, "rx");
+                if (cJSON_IsNumber(item)) g_app_config.qr_uart_rx = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioQr, "uartNum");
+                if (cJSON_IsNumber(item)) g_app_config.qr_uart_num = item->valueint;
+                
+                item = cJSON_GetObjectItem(gpioQr, "baudRate");
+                if (cJSON_IsNumber(item)) g_app_config.qr_baud_rate = item->valueint;
+            }
 
-            app_config_save();
+            // Save configuration to NVS
+            esp_err_t err = app_config_save();
+            bool save_ok = (err == ESP_OK);
+            
+            // Note: Some changes (like GPIO pins) require a restart to take effect
+            ESP_LOGI(TAG, "Configuration updated. Some changes may require restart.");
+
+            // Respuesta
+            cJSON *resp = cJSON_CreateObject();
+            if (resp) {
+                cJSON_AddStringToObject(resp, "action", "retornoSetConfig");
+                cJSON_AddBoolToObject(resp, "ok", save_ok);
+                cJSON_AddStringToObject(resp, "message", save_ok ? "Config saved" : "Error saving config");
+                cJSON_AddBoolToObject(resp, "enableCards", g_app_config.enable_cards);
+                cJSON_AddBoolToObject(resp, "enableQr", g_app_config.enable_qr);
+                cJSON_AddStringToObject(resp, "idPeticion", id_pet);
+                cJSON_AddStringToObject(resp, "id", device_id);
+
+                char *json = cJSON_PrintUnformatted(resp);
+                if (json) {
+                    mqtt_enqueue(TOPIC_RESP_FIXED, json, 1, 0);
+                    cJSON_free(json);
+                }
+                cJSON_Delete(resp);
+            }
         } else {
             ESP_LOGW(TAG, "setConfig: campo 'config' no valido");
         }
 
+        cJSON_Delete(root);
+    } else if (strcmp(cmd->action, "resetConfig") == 0) {
+        
+        // Reset configuration to defaults
+        cJSON *root = cJSON_Parse(cmd->payload);
+        const char *id_pet = "-";
+        
+        if (root) {
+            cJSON *idPetItem = cJSON_GetObjectItem(root, "idPeticion");
+            if (cJSON_IsString(idPetItem)) {
+                id_pet = idPetItem->valuestring;
+            }
+            cJSON_Delete(root);
+        }
+        
+        esp_err_t err = app_config_reset_to_defaults();
+        bool reset_ok = (err == ESP_OK);
+        
+        ESP_LOGI(TAG, "Configuration reset to defaults. Restart recommended.");
+        
         // Respuesta
         cJSON *resp = cJSON_CreateObject();
         if (resp) {
-            cJSON_AddStringToObject(resp, "action", "retornoSetConfig");
-            cJSON_AddBoolToObject  (resp, "ok", true);
-            cJSON_AddBoolToObject  (resp, "enableCards", g_app_config.enable_cards);
+            cJSON_AddStringToObject(resp, "action", "retornoResetConfig");
+            cJSON_AddBoolToObject(resp, "ok", reset_ok);
+            cJSON_AddStringToObject(resp, "message", reset_ok ? "Config reset to defaults" : "Error resetting config");
             cJSON_AddStringToObject(resp, "idPeticion", id_pet);
             cJSON_AddStringToObject(resp, "id", device_id);
 
@@ -198,8 +407,7 @@ static void handle_command(const command_t *cmd)
             }
             cJSON_Delete(resp);
         }
-
-        cJSON_Delete(root);
+        
     } else if (strcmp(cmd->action, "status_now") == 0) {
         publish_status_now(cmd->id_peticion);
 

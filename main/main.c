@@ -31,16 +31,18 @@ char topic_stat[128] = {0};
 
 static void make_device_id(void)
 {
-    snprintf(device_id, sizeof(device_id), "%s", DEVICE_ID_FIXED);
+    // Use device_id from configuration
+    snprintf(device_id, sizeof(device_id), "%s", g_app_config.device_id);
 }
 
 static void make_topics(void)
 {
+    // Use MQTT topic root from configuration
     snprintf(topic_cmd, sizeof(topic_cmd),
-             TOPIC_ROOT_BASE "/%s", device_id);
+             "%s/%s", g_app_config.mqtt_topic_root, device_id);
 
     snprintf(topic_stat, sizeof(topic_stat),
-             TOPIC_ROOT_BASE "/%s/status", device_id);
+             "%s/%s/status", g_app_config.mqtt_topic_root, device_id);
 }
 
 void app_main(void)
@@ -58,6 +60,7 @@ void app_main(void)
     make_topics();
 
     ESP_LOGI(TAG, "DEVICE_ID=%s", device_id);
+    ESP_LOGI(TAG, "DEVICE_NAME=%s", g_app_config.device_name);
     ESP_LOGI(TAG, "topic_cmd=%s", topic_cmd);
     ESP_LOGI(TAG, "topic_stat=%s", topic_stat);
     ESP_LOGI(TAG, "topic_resp=%s", TOPIC_RESP_FIXED);

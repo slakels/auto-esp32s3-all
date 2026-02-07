@@ -306,18 +306,25 @@ static void mqtt_event_handler(void *handler_args,
     mqtt_event_handler_cb((esp_mqtt_event_handle_t) event_data);
 }
 
-// ================== INICIALIZACIÓN MQTT ==================
+// ================== MQTT INITIALIZATION ==================
 
 void mqtt_start(void)
 {
-    char uri[128];
-    snprintf(uri, sizeof(uri), "mqtt://%s:%d", MQTT_HOST, MQTT_PORT);
+    // Check if MQTT is enabled in configuration
+    if (!g_app_config.enable_mqtt) {
+        ESP_LOGW(TAG, "MQTT disabled in configuration, skipping init");
+        return;
+    }
+    
+    char uri[256];
+    snprintf(uri, sizeof(uri), "mqtt://%s:%d", 
+             g_app_config.mqtt_host, g_app_config.mqtt_port);
 
     esp_mqtt_client_config_t mqtt_cfg = {0};
     mqtt_cfg.broker.address.uri = uri;
-    mqtt_cfg.credentials.username                = MQTT_USER;
+    mqtt_cfg.credentials.username                = g_app_config.mqtt_user;
     mqtt_cfg.credentials.client_id               = device_id;
-    mqtt_cfg.credentials.authentication.password = MQTT_PASS;
+    mqtt_cfg.credentials.authentication.password = g_app_config.mqtt_pass;
     mqtt_cfg.session.disable_clean_session       = true;
 
     mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
@@ -327,6 +334,8 @@ void mqtt_start(void)
                         mqtt_event_handler,
                         NULL));
     ESP_ERROR_CHECK(esp_mqtt_client_start(mqtt_client));
+    
+    ESP_LOGI(TAG, "MQTT started with broker: %s", g_app_config.mqtt_host);
 }
 
 // ================== CREACIÓN DE TASKS ==================
