@@ -22,6 +22,12 @@ static esp_err_t wifi_apply_current_config(void)
 {
     wifi_config_t wifi_config = (wifi_config_t){ 0 };
 
+    // Thread-safe read of WiFi configuration
+    if (app_config_lock() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to acquire config lock");
+        return ESP_FAIL;
+    }
+
     snprintf((char *)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), 
              "%s", g_app_config.wifi_ssid);
     snprintf((char *)wifi_config.sta.password, sizeof(wifi_config.sta.password), 
@@ -29,6 +35,9 @@ static esp_err_t wifi_apply_current_config(void)
     wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
     ESP_LOGI(TAG, "Using WiFi SSID=%s", g_app_config.wifi_ssid);
+    
+    app_config_unlock();
+    
     return esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 }
 
@@ -92,8 +101,14 @@ static void wifi_event_handler(void *arg,
 // === INIT AND START WIFI ===
 esp_err_t wifi_init_and_start(void)
 {
-    // Check if WiFi is enabled in configuration
-    if (!g_app_config.enable_wifi) {
+    // Check if WiFi is enabled in configuration (thread-safe)
+    bool wifi_enabled = true;
+    if (app_config_lock() == ESP_OK) {
+        wifi_enabled = g_app_config.enable_wifi;
+        app_config_unlock();
+    }
+    
+    if (!wifi_enabled) {
         ESP_LOGW(TAG, "WiFi disabled in configuration, skipping init");
         return ESP_OK;
     }

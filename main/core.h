@@ -13,14 +13,14 @@ typedef struct {
     int   id_pista;
     char  id_peticion[32];
 
-    char payload[256];
+    char payload[1024];  // Increased from 256 to 1024 for larger config payloads
     char result[8];      // "OK" / "KO"
     char type[8];        // "IN" / "OUT"
 } command_t;
 
 typedef struct {
     char topic[128];
-    char payload[256];
+    char payload[512];   // Increased from 256 to 512 for larger messages
     int  qos;
     int  retain;
 } mqtt_out_msg_t;

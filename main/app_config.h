@@ -55,7 +55,15 @@ typedef struct {
 
 extern app_config_t g_app_config;
 
+// Thread-safe configuration access
+void      app_config_init_mutex(void);
+esp_err_t app_config_lock(void);
+void      app_config_unlock(void);
+
 esp_err_t app_config_load(void);
 esp_err_t app_config_save(void);
 void      app_config_set_defaults(void);
 esp_err_t app_config_reset_to_defaults(void);
+
+// Helper for safe string copy with guaranteed null termination
+void app_config_safe_str_copy(char *dst, const char *src, size_t dst_size);

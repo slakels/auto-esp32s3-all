@@ -5,6 +5,8 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "driver/uart.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include <string.h>
 
 static const char *TAG = "APP_CFG";
@@ -13,6 +15,48 @@ static const int   CFG_VERSION   = 2;  // Incremented for new structure
 
 app_config_t g_app_config = {0};
 
+// Thread safety for configuration access
+static SemaphoreHandle_t s_config_mutex = NULL;
+
+// Thread safety for configuration access
+static SemaphoreHandle_t s_config_mutex = NULL;
+
+void app_config_init_mutex(void)
+{
+    if (s_config_mutex == NULL) {
+        s_config_mutex = xSemaphoreCreateMutex();
+        configASSERT(s_config_mutex != NULL);
+        ESP_LOGI(TAG, "Config mutex initialized");
+    }
+}
+
+esp_err_t app_config_lock(void)
+{
+    if (s_config_mutex == NULL) {
+        ESP_LOGW(TAG, "Config mutex not initialized");
+        return ESP_FAIL;
+    }
+    return (xSemaphoreTake(s_config_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) 
+           ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+void app_config_unlock(void)
+{
+    if (s_config_mutex != NULL) {
+        xSemaphoreGive(s_config_mutex);
+    }
+}
+
+// Helper for safe string copy with guaranteed null termination
+void app_config_safe_str_copy(char *dst, const char *src, size_t dst_size)
+{
+    if (dst == NULL || src == NULL || dst_size == 0) {
+        return;
+    }
+    strncpy(dst, src, dst_size - 1);
+    dst[dst_size - 1] = '\0';  // Explicit null termination
+}
+
 void app_config_set_defaults(void)
 {
     memset(&g_app_config, 0, sizeof(g_app_config));
@@ -20,8 +64,8 @@ void app_config_set_defaults(void)
     g_app_config.version = CFG_VERSION;
     
     // Device identification defaults
-    strncpy(g_app_config.device_id, "SFTCLUB_DEVICE", sizeof(g_app_config.device_id) - 1);
-    strncpy(g_app_config.device_name, "Default Device", sizeof(g_app_config.device_name) - 1);
+    app_config_safe_str_copy(g_app_config.device_id, "SFTCLUB_DEVICE", sizeof(g_app_config.device_id));
+    app_config_safe_str_copy(g_app_config.device_name, "Default Device", sizeof(g_app_config.device_name));
     
     // Feature enables - default values
     g_app_config.enable_cards = false;
@@ -30,15 +74,15 @@ void app_config_set_defaults(void)
     g_app_config.enable_mqtt = true;
     
     // WiFi defaults (from config.c)
-    strncpy(g_app_config.wifi_ssid, "DIGIFIBRA-3SDH", sizeof(g_app_config.wifi_ssid) - 1);
-    strncpy(g_app_config.wifi_pass, "CSFX66C2Yfyz", sizeof(g_app_config.wifi_pass) - 1);
+    app_config_safe_str_copy(g_app_config.wifi_ssid, "DIGIFIBRA-3SDH", sizeof(g_app_config.wifi_ssid));
+    app_config_safe_str_copy(g_app_config.wifi_pass, "CSFX66C2Yfyz", sizeof(g_app_config.wifi_pass));
     
     // MQTT defaults (from config.h)
-    strncpy(g_app_config.mqtt_host, "mqtt.pro.wiplaypadel.com", sizeof(g_app_config.mqtt_host) - 1);
+    app_config_safe_str_copy(g_app_config.mqtt_host, "mqtt.pro.wiplaypadel.com", sizeof(g_app_config.mqtt_host));
     g_app_config.mqtt_port = 1883;
-    strncpy(g_app_config.mqtt_user, "admin", sizeof(g_app_config.mqtt_user) - 1);
-    strncpy(g_app_config.mqtt_pass, "Abc_0123456789", sizeof(g_app_config.mqtt_pass) - 1);
-    strncpy(g_app_config.mqtt_topic_root, "/var/deploys/topics", sizeof(g_app_config.mqtt_topic_root) - 1);
+    app_config_safe_str_copy(g_app_config.mqtt_user, "admin", sizeof(g_app_config.mqtt_user));
+    app_config_safe_str_copy(g_app_config.mqtt_pass, "Abc_0123456789", sizeof(g_app_config.mqtt_pass));
+    app_config_safe_str_copy(g_app_config.mqtt_topic_root, "/var/deploys/topics", sizeof(g_app_config.mqtt_topic_root));
     
     // GPIO defaults - RC522 SPI (from config.h)
     g_app_config.rc522_pin_mosi = 11;
@@ -67,11 +111,20 @@ void app_config_set_defaults(void)
 
 esp_err_t app_config_load(void)
 {
+    esp_err_t err;
+    
+    // Lock for thread-safe access
+    if ((err = app_config_lock()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to acquire config lock");
+        return err;
+    }
+    
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
+    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "No config found in NVS, using defaults");
         app_config_set_defaults();
+        app_config_unlock();
         return ESP_OK;
     }
 
@@ -85,29 +138,64 @@ esp_err_t app_config_load(void)
             ESP_LOGW(TAG, "Config version mismatch (stored:%d, expected:%d), migrating...", 
                      g_app_config.version, CFG_VERSION);
             
-            // Save old values that we want to preserve
+            // TODO: Implement proper field-by-field migration
+            // For now, preserve important user settings
+            char old_device_id[32];
+            char old_device_name[64];
+            char old_wifi_ssid[64];
+            char old_wifi_pass[64];
+            char old_mqtt_host[128];
+            int  old_mqtt_port;
+            char old_mqtt_user[64];
+            char old_mqtt_pass[64];
             bool old_enable_cards = g_app_config.enable_cards;
             bool old_enable_qr = g_app_config.enable_qr;
+            
+            memcpy(old_device_id, g_app_config.device_id, sizeof(old_device_id));
+            memcpy(old_device_name, g_app_config.device_name, sizeof(old_device_name));
+            memcpy(old_wifi_ssid, g_app_config.wifi_ssid, sizeof(old_wifi_ssid));
+            memcpy(old_wifi_pass, g_app_config.wifi_pass, sizeof(old_wifi_pass));
+            memcpy(old_mqtt_host, g_app_config.mqtt_host, sizeof(old_mqtt_host));
+            old_mqtt_port = g_app_config.mqtt_port;
+            memcpy(old_mqtt_user, g_app_config.mqtt_user, sizeof(old_mqtt_user));
+            memcpy(old_mqtt_pass, g_app_config.mqtt_pass, sizeof(old_mqtt_pass));
             
             // Set defaults (includes new fields)
             app_config_set_defaults();
             
             // Restore old values
+            memcpy(g_app_config.device_id, old_device_id, sizeof(g_app_config.device_id));
+            memcpy(g_app_config.device_name, old_device_name, sizeof(g_app_config.device_name));
+            memcpy(g_app_config.wifi_ssid, old_wifi_ssid, sizeof(g_app_config.wifi_ssid));
+            memcpy(g_app_config.wifi_pass, old_wifi_pass, sizeof(g_app_config.wifi_pass));
+            memcpy(g_app_config.mqtt_host, old_mqtt_host, sizeof(g_app_config.mqtt_host));
+            g_app_config.mqtt_port = old_mqtt_port;
+            memcpy(g_app_config.mqtt_user, old_mqtt_user, sizeof(g_app_config.mqtt_user));
+            memcpy(g_app_config.mqtt_pass, old_mqtt_pass, sizeof(g_app_config.mqtt_pass));
             g_app_config.enable_cards = old_enable_cards;
             g_app_config.enable_qr = old_enable_qr;
+            
+            // Unlock temporarily to allow save
+            app_config_unlock();
             
             // Save migrated config
             app_config_save();
             
             ESP_LOGI(TAG, "Config migrated to version %d", CFG_VERSION);
+            return ESP_OK;
         } else {
             ESP_LOGI(TAG, "Config loaded from NVS (version %d)", g_app_config.version);
         }
+        app_config_unlock();
         return ESP_OK;
     }
 
     ESP_LOGW(TAG, "Config not found or corrupted, using defaults");
     app_config_set_defaults();
+    
+    // Unlock temporarily to allow save
+    app_config_unlock();
+    
     // Save defaults so next boot will have valid config
     app_config_save();
     return ESP_OK;
@@ -115,10 +203,19 @@ esp_err_t app_config_load(void)
 
 esp_err_t app_config_save(void)
 {
+    esp_err_t err;
+    
+    // Lock for thread-safe access
+    if ((err = app_config_lock()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to acquire config lock for save");
+        return err;
+    }
+    
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
+    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "nvs_open error: %s", esp_err_to_name(err));
+        app_config_unlock();
         return err;
     }
 
@@ -134,6 +231,8 @@ esp_err_t app_config_save(void)
     } else {
         ESP_LOGI(TAG, "Config saved to NVS");
     }
+    
+    app_config_unlock();
     return err;
 }
 
